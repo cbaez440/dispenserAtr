@@ -1,3 +1,7 @@
+#include <Stepper.h>
+#define STEPS 4076
+Stepper stepper(STEPS, A0, A1, A2, A3);
+
 enum ProcessState {
   INIT,
   FIRST_BEVERAGE_POURED,
@@ -7,27 +11,29 @@ enum ProcessState {
 
 const int RELAY_1 = 3;
 const int RELAY_2 = 4;
-const int DRINK_SELECTED_BUTTON = 5;
-const int STEPPER_MOTOR = 7;
+const int FIRST_DRINK_SELECTED_BUTTON = 5;
+const int SECOND_DRINK_SELECTED_BUTTON = 6;
 const int BUZZER = 9;
 const int FIRST_BEVERAGE_ULTRASONIC_TRIGGER = 12;
 const int FIRST_BEVERAGE_ULTRASONIC_SENSOR = 10;
 const int SECOND_BEVERAGE_ULTRASONIC_TRIGGER = 13;
 const int SECOND_BEVERAGE_ULTRASONIC_SENSOR = 11;
-const int DRINK_1_TIME = 5000; // ms
-const int DRINK_2_TIME = 5000; // ms
 const int MOTOR_TIME = 6000; // ms
 const int BUZZER_FINISH_TIME = 500; // ms
 const int BUZZER_ERROR_TIME = 3000; // ms
-int isStartButtonPressed;
+const int FULL_DRINK_TIME = 10000; // ms
+float DRINK_1_TIME = 0.5; // ms
+float DRINK_2_TIME = 0.5; // ms
+int firstButtonPressed;
+int secondButtonPressed;
 ProcessState state;
 
 
 void setup() {
   pinMode(RELAY_1, OUTPUT);
   pinMode(RELAY_2, OUTPUT);
-  pinMode(DRINK_SELECTED_BUTTON, INPUT);
-  pinMode(STEPPER_MOTOR, OUTPUT);
+  pinMode(FIRST_DRINK_SELECTED_BUTTON, INPUT);
+  pinMode(SECOND_DRINK_SELECTED_BUTTON, INPUT);
   pinMode(BUZZER, OUTPUT);
   pinMode(FIRST_BEVERAGE_ULTRASONIC_TRIGGER, OUTPUT); //pin como salida
   pinMode(FIRST_BEVERAGE_ULTRASONIC_SENSOR, INPUT);  //pin como entrada
@@ -35,16 +41,29 @@ void setup() {
   pinMode(SECOND_BEVERAGE_ULTRASONIC_TRIGGER, OUTPUT); //pin como salida
   pinMode(SECOND_BEVERAGE_ULTRASONIC_SENSOR, INPUT);  //pin como entrada
   digitalWrite(SECOND_BEVERAGE_ULTRASONIC_TRIGGER, LOW);
-  isStartButtonPressed = LOW;
+  firstButtonPressed = LOW;
+  secondButtonPressed = LOW;
   state = INIT;
+  stepper.setSpeed(5);
    
   Serial.begin(9600);
 }
 
 void loop() {
-  if (isStartButtonPressed == LOW) {
-    // Posible lugar de lectura de selección de bebida, modificando las variables DRINK_1_TIME y DRINK_2_TIME
-    isStartButtonPressed = digitalRead(DRINK_SELECTED_BUTTON);
+  if (buttonsNotPressed()) {
+    firstButtonPressed = digitalRead(FIRST_DRINK_SELECTED_BUTTON);
+    secondButtonPressed = digitalRead(SECOND_DRINK_SELECTED_BUTTON);
+
+    if (firstButtonPressed == HIGH) {
+      Serial.println("se apreto el primer boton");
+      DRINK_1_TIME = 0.7;
+      DRINK_2_TIME = 0.3;
+    } else if (secondButtonPressed == HIGH) {
+      Serial.println("se apreto el segundo boton");
+      DRINK_1_TIME = 0.4;
+      DRINK_2_TIME = 0.6;
+    }
+
   } else {
     if (state == INIT) {
       fillGlassUp(RELAY_1, DRINK_1_TIME, FIRST_BEVERAGE_POURED);
@@ -55,19 +74,27 @@ void loop() {
     } else if (state == SECOND_BEVERAGE_POURED) {
       Serial.println("Finalizado del proceso de llenado de vaso");
       turnBuzzerOn(BUZZER_FINISH_TIME);
-      isStartButtonPressed = 0;
+      firstButtonPressed = LOW;
+      secondButtonPressed = LOW;
       state = INIT;
     }
   }
 }
 
-void fillGlassUp(int relayPin, int delayTime, ProcessState nextState){
+int buttonsNotPressed() {
+  return firstButtonPressed == LOW && secondButtonPressed == LOW;
+}
+
+void fillGlassUp(int relayPin, float delayPercentage, ProcessState nextState){
   if (isGlassInPlace()) {
     Serial.print("Llenando vaso con ");
     Serial.print(nextState);
     Serial.println("");
     digitalWrite(relayPin, HIGH);
-    delay(delayTime);
+    Serial.print("Tiempo de llenado: ");
+    Serial.print(FULL_DRINK_TIME * delayPercentage);
+    Serial.println("");
+    delay(FULL_DRINK_TIME * delayPercentage);
     Serial.println("Fin llenado vaso");
     digitalWrite(relayPin, LOW);
     state = nextState;
@@ -118,11 +145,9 @@ int getCurrentSensor() {
 int moveGlass() {
   if (isGlassInPlace()) {
     Serial.println("Moviendo vaso");
-    digitalWrite(STEPPER_MOTOR, HIGH);
-    delay(MOTOR_TIME);
+    stepper.step(2048);
     Serial.println("Fin movida vaso");
     Serial.println("--------");
-    digitalWrite(STEPPER_MOTOR, LOW);
     state = GLASS_MOVED;
   } else {
     Serial.println("Vaso no apoyado");
@@ -136,4 +161,3 @@ boolean turnBuzzerOn(int delayTime) {
   digitalWrite(BUZZER, LOW);
   delay(delayTime);
 }
-
